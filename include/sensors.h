@@ -1,8 +1,6 @@
 #include <Arduino.h>
-#include <DHT.h>
-#include <DHT_U.h>
-#include "DHT.h"
 #include "file_system.h"
+#include "adc_setup.h"
 
 #ifndef SENSORS_H
 #define SENSORS_H
@@ -24,6 +22,11 @@ private:
     const int adc_resolution = 4095;
     const float adc_vref = 3.3;
     const float temp_offset = 0.5;
+
+    // median filter init
+    int old_sample = random(200);
+    int recent_sample = old_sample;
+    int new_sample = recent_sample;
 
 public:
 

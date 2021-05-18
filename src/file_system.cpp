@@ -29,11 +29,6 @@ bool FileSystem::read_file(const char* path){
     }
     Serial.println("Config file exist: " + String(path));
     Serial.printf("File size: %i (bytes)\n", size);
-    // // Debug region
-    // while(file.available()){
-    //     Serial.write(file.read());
-    // }
-    // Serial.println(""); // \n
     file.close();
     return true;
 }
@@ -45,33 +40,27 @@ bool FileSystem::write_file(const char* path, char buff[]){
 
     if(!f){
         f.close();
-        Serial.println("File not found"); // debug msg
         return false;
     }
 
     if(strlen(buff) == 0){ // needs debug
-        Serial.println("Config is empty"); // debug msg
         return false;
     }
 
-    if(strlen(buff) > buff_size){ // needs debug
-        Serial.println("Config too large"); //debug msg
+    if(strlen(buff) > buff_size){ // needs debugg
         return false;
     }
 
     if (size > buff_size)
     {
         f.close();
-        Serial.println("File too large"); //debug msg
         return false;
     }
 
     if(f.print(buff)){
-        Serial.println("File written successfully"); //debug msg
         return true;
     }
 
-    Serial.println("Write failed"); //debug msg
     return false;   
 }
 

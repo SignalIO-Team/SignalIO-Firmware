@@ -1,10 +1,16 @@
 #include "sensors.h"
 
 FileSystem actuator_file_system;
-
+esp_adc SENSOR_ADC;
 
 float sensors::tmp36_read_temperature(){
-    float adc_reading = analogRead(module_pin);
+
+    new_sample = analogRead(module_pin);
+    recent_sample = new_sample;
+    old_sample = recent_sample;
+
+    int adc_reading = SENSOR_ADC.adc_median_filter(old_sample, recent_sample, new_sample);
+    
     float voltage_conversion = (adc_reading * adc_vref) / adc_resolution;
     return (voltage_conversion - temp_offset) * temp_conversion_factor;
 }
@@ -24,7 +30,11 @@ int sensors::digital_sensor_read(){
 
 
 int sensors::analog_sensor_read(){
-    int state = analogRead(module_pin);
+    new_sample = analogRead(module_pin);
+    recent_sample = new_sample;
+    old_sample = recent_sample;
+
+    int state = SENSOR_ADC.adc_median_filter(old_sample, recent_sample, new_sample);
     return state;
 }
 

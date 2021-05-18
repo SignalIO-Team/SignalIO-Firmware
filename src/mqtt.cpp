@@ -63,8 +63,6 @@ void actuator_callback(char *msg, byte *payload, unsigned int length){
     for (unsigned int i = 0; i < length; i++) {
        received_message += (char)payload[i];
     }
-    Serial.println(received_message); // debug
-
     DeserializationError error = deserializeJson(msg_callback,received_message);
 
     validation = msg_callback["props"][0]["type"];
@@ -73,7 +71,7 @@ void actuator_callback(char *msg, byte *payload, unsigned int length){
     if(String(validation) == "request"){
         if(String(message) == state_changer_on){
             digitalWrite(module_pin, LOW);
-            clientMQTT.publish(mqtt_topic, relay_msg_packer.pack(message, "actuator", RESPONSE).c_str());
+            clientMQTT.publish(mqtt_topic, relay_msg_packer.pack(message, "Actuator interface", RESPONSE).c_str());
             
             if(save_actuator_state){
                 actuator_cur_state["state"] = "1";
@@ -81,13 +79,13 @@ void actuator_callback(char *msg, byte *payload, unsigned int length){
 
                 bool save_flag = actuator_write_state.write_file("/actuator_state.json", actuator_cur_state_buff);
                 if(!save_flag){
-                    Serial.println("State write failed!");
+                    Serial.println("Operation failed. Code: 12");
                 }
             }
         }
         if(String(message) != state_changer_on){
             digitalWrite(module_pin, HIGH);
-            clientMQTT.publish(mqtt_topic, relay_msg_packer.pack(message, "actuator", RESPONSE).c_str());
+            clientMQTT.publish(mqtt_topic, relay_msg_packer.pack(message, "Actuator interface", RESPONSE).c_str());
             
             if(save_actuator_state){
                 actuator_cur_state["state"] = "0";
@@ -95,7 +93,7 @@ void actuator_callback(char *msg, byte *payload, unsigned int length){
 
                 bool save_flag = actuator_write_state.write_file("/actuator_state.json", actuator_cur_state_buff);
                 if(!save_flag){
-                    Serial.println("State write failed!");
+                    Serial.println("Operation failed. Code: 12");
                 }
             }
         }

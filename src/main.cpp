@@ -9,8 +9,7 @@
 #include "json_msg_packer.h"
 #include "system_codes.h"
 #include "deep_sleep.h"
-
-RTC_DATA_ATTR int boot_num;
+#include "adc_setup.h"
 
 uint8_t SIGNAL_LED = 19;
 uint8_t CHARGE_MONITORING_ADC_PIN = 34;
@@ -47,6 +46,7 @@ mqtt MQTT;
 MessagePacker packer;
 Pangodream_18650_CL bat;
 Sleep slp;
+esp_adc ADC;
 
 StaticJsonDocument<1024> config;
 
@@ -105,37 +105,10 @@ void signal_led(int time){
 }
 
 
-void deep_sleep_wakeup_reason(){
-  const char* sensor_message = config["mqtt_callback"];
-  
-  esp_sleep_wakeup_cause_t wakeup_reason;
-
-  wakeup_reason = esp_sleep_get_wakeup_cause();
-
-  switch(wakeup_reason)
-  {
-    case ESP_SLEEP_WAKEUP_EXT0 :  
-            MQTT.mqtt_pub(packer.pack(sensor_message, "digital_sensor", STRING), config["mqtt_topic"]); 
-            break;
-    case ESP_SLEEP_WAKEUP_EXT1 : 
-            Serial.println("Wakeup caused by external signal using RTC_CNTL"); 
-            break;
-    case ESP_SLEEP_WAKEUP_TIMER: 
-            Serial.println("Wakeup caused by timer"); 
-            MQTT.mqtt_pub(packer.message("wake up with timer", "message"), service_topic.c_str());
-            break;
-    default : 
-            Serial.printf("Wakeup was not caused by deep sleep: %d\n",wakeup_reason); 
-            break;
-  }
-}
-
-
 void sys_reset(){
   int state = digitalRead(FACT_RESET_BTN);
   if(state == LOW){
      bool sys_reset_flag = fileSystem.config_reset(config_path, 0);
-     //bool wifi_reset_flag = fileSystem.config_reset(wifi_path, 1);
      bool actuator_state_reset_flag = fileSystem.config_reset(actuator_state_path, 2);
 
      if(sys_reset_flag && actuator_state_reset_flag){
@@ -154,25 +127,27 @@ void sys_reset(){
 void pwr_manager(){
   analogRead(CHARGE_MONITORING_ADC_PIN);
   int battery_charge_level = bat.getBatteryChargeLevel();
-  int battery_charge_volts = bat.getBatteryVolts();
+  float battery_charge_volts = bat.getBatteryVolts();
   Serial.print("Battery voltage: ");
   Serial.println(battery_charge_volts);
   Serial.print("Battery charge level: ");
   Serial.println(battery_charge_level);
-  MQTT.mqtt_pub(packer.pack(String(battery_charge_level).c_str(), "battery_charge_level", STRING), service_topic.c_str());
+  
+  MQTT.mqtt_pub(packer.pack(String(battery_charge_volts).c_str(), "battery_charge_level", STRING), service_topic.c_str());
   delay(1000);
 }
 
 
 void hall_sensor(){
   int hall_val = hallRead();
-  MQTT.mqtt_pub(packer.pack(String(hall_val).c_str(), "hall sensor", STRING), config["mqtt_topic"]);
+  MQTT.mqtt_pub(packer.pack(String(hall_val).c_str(), "Hall sensor", STRING), config["mqtt_topic"]);
 }
 
 
 void tmp36_sensor(){
   float temperature_reading = sensor.tmp36_read_temperature();
-  MQTT.mqtt_pub(packer.pack(String(temperature_reading).c_str(), "tmp36 temperature sensor", STRING), config["mqtt_topic"]);
+  MQTT.mqtt_pub(packer.pack(String(temperature_reading).c_str(), "TMP36 temperature sensor", STRING), config["mqtt_topic"]);
+  signal_led(10);
 }
 
 
@@ -181,7 +156,7 @@ void pir_motion_sensor(){
     int res = sensor.digital_sensor_read();
     if(res == HIGH){
       if(!state){
-        MQTT.mqtt_pub(packer.pack("on", "PIR_sensor", STRING), config["mqtt_topic"]);
+        MQTT.mqtt_pub(packer.pack("on", "PIR sensor", STRING), config["mqtt_topic"]);
         MQTT.mqtt_sub();
         signal_led(10);
       }
@@ -211,12 +186,12 @@ void pir_motion_sensor(){
 void digital_sensor(){
     int res = sensor.digital_sensor_read();
     if(res == LOW){
-        MQTT.mqtt_pub(packer.pack("on", "digital_sensor", STRING), config["mqtt_topic"]);
+        MQTT.mqtt_pub(packer.pack("on", "Digital sensor interface", STRING), config["mqtt_topic"]);
         MQTT.mqtt_sub();
         signal_led(10);
     }
     if(res != LOW){
-      MQTT.mqtt_pub(packer.pack("off", "digital_sensor", STRING), config["mqtt_topic"]);
+      MQTT.mqtt_pub(packer.pack("off", "Digital sensor interface", STRING), config["mqtt_topic"]);
       MQTT.mqtt_sub();
       signal_led(10);
     }
@@ -227,7 +202,7 @@ void digital_sensor(){
 void analog_sensor(){
     int analog_sensor_message = sensor.analog_sensor_read();
     Serial.println(analog_sensor_message);
-    MQTT.mqtt_pub(packer.pack(String(analog_sensor_message).c_str(), "analog sensor", STRING), config["mqtt_topic"]);
+    MQTT.mqtt_pub(packer.pack(String(analog_sensor_message).c_str(), "Analog sensor interface", STRING), config["mqtt_topic"]);
     MQTT.mqtt_sub();
     signal_led(10);
 }
@@ -255,71 +230,50 @@ void relay(){
 
 
 void deepsleep_mode(){
-  Serial.println("Enable deep sleep mode");
-    deep_sleep_mode = atoi(config["deepsleep_type"]);
-    Serial.println(deep_sleep_mode);
-    if(deep_sleep_mode == TMR_MODE){
-        
-        // debug start
-        // ++boot_num;
-        // debug end
+  Serial.println("Enabling deep sleep mode");
+  deep_sleep_mode = atoi(config["deepsleep_type"]);
+  deep_sleep_timer = atoi(config["deepseep_tmr"]);
 
-        Serial.println("timer mode");
-        deep_sleep_timer = atoi(config["deepseep_tmr"]);
+  sys_reset();
 
-        sys_reset();
-
-        switch (sensor_select)
-        {
-        case DIGITAL_SENSOR:
+  switch (sensor_select)
+    {
+      case DIGITAL_SENSOR:
           pwr_manager();
           sensor.sensor_init();
           delay(1000);
           digital_sensor();
           slp.tmr_sleep(deep_sleep_timer);
-          // debug start
-          // MQTT.mqtt_pub(packer.message(String(boot_num).c_str(), STRING), service_topic.c_str());
-          //debug end
           break;
 
-        case ANALOG_SENSOR:
+      case ANALOG_SENSOR:
           pwr_manager();
           delay(1000);
           analog_sensor();
           slp.tmr_sleep(deep_sleep_timer);
           break;
 
-        case TMP36_SENSOR:
+      case TMP36_SENSOR:
           pwr_manager();
           delay(1000);
           tmp36_sensor();
           slp.tmr_sleep(deep_sleep_timer);
           break;
 
-        default:
-          Serial.println("module not supported by deep sleep mode"); // debug
+      default:
+          Serial.println("module not supported by deep sleep mode");
           MQTT.mqtt_pub(packer.message(MODULE_NOT_SUPPORTED_BY_DEEPSLEEP, "error"), service_topic.c_str());
           signal_led(1000);
           break;
         }
     }
 
-    if(deep_sleep_mode == PIN_TRIGGER_MODE){
-        pwr_manager();
-        deep_sleep_wakeup_reason();
-        Serial.println("trigger mode\n For now only works on pin 14");
-        pinMode(14, OUTPUT_OPEN_DRAIN);
-        digitalWrite(14, LOW);
-        slp.pin_trigger_sleep();
-    }
-}
-
 
 void setup()
 {
   pinMode(SIGNAL_LED, OUTPUT);
   pinMode(FACT_RESET_BTN, INPUT_PULLUP);
-
+  
   for (size_t i = 0; i < 5; i++)
   {
     signal_led(500);
@@ -327,6 +281,14 @@ void setup()
 
   Serial.begin(9600);
   get_system_info();
+  ADC.check_efuse();
+
+  bool battery_adc_state = ADC.adc_init();
+
+  if(battery_adc_state){
+    Serial.println("Battery ADC inited");
+  }
+
 
   if(!SPIFFS.begin()){
     Serial.println("Failed to init file system");
@@ -449,7 +411,7 @@ void loop()
     break;
     
   default:
-    Serial.println("No module selected"); // debug
+    Serial.println("No module selected");
     MQTT.mqtt_pub(packer.message(MODULE_NOT_FOUND, "error"), service_topic.c_str());
     signal_led(1000);
     break;

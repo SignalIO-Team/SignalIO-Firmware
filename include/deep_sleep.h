@@ -10,8 +10,6 @@
                              
 class Sleep
 {
-private:
-    //
 public:
     void tmr_sleep(unsigned int sleep_time);
     void pin_trigger_sleep();
